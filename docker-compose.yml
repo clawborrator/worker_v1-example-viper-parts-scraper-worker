@@ -1,0 +1,46 @@
+# worker_v1-example-viper-parts-scraper-worker. docker-compose for
+# the Facebook Dodge Viper parts scraper.
+#
+# Pulls the agent code (CLAUDE.md + specialists/fb-groups.js +
+# config/*.json) from the sibling repo via REPO_URL in .env:
+#   https://github.com/clawborrator/worker_v1-example-viper-parts-scraper-repo
+#
+# Read-only scraper. Every 6 hours, cron fires inside the agent's
+# Claude Code session. One cycle visits each configured Facebook
+# Dodge Viper group, scrolls the feed, extracts buy/sell post
+# candidates, dedups against prior cycles, and notifies
+# @clauderemote with new matches. NEVER posts, comments, reacts,
+# or DMs anyone; the wrapper has no write-side verbs at all.
+#
+# Single-container architecture. No fan-out.
+#
+#   1. Drop your Facebook cookies into
+#      ./secrets/facebook.cookies.json (see README)
+#   2. Fill in .env (copy from .env.example)
+#   3. Edit groups + keywords in the cloned repo's config/ dir
+#      (or after first boot, edit + git push and the next cycle
+#      picks up the changes)
+#   4. docker compose up -d
+#   5. docker compose logs -f         # watch the loop
+#   6. docker compose down            # stop + remove
+#
+# Image is ladder99/clawborrator-worker-playwright:latest, the
+# same one the reddit and linkedin engagers use. Ships with
+# stealth plugin + xvfb + xauth pre-baked.
+
+services:
+  scraper:
+    image:          ladder99/clawborrator-worker-playwright:latest
+    container_name: viper-parts-scraper
+    env_file:       .env
+    # Chromium uses /dev/shm heavily; default 64MB is not enough.
+    # 2GB matches Playwright's docs for stable headless runs.
+    shm_size:       2gb
+    volumes:
+      # Facebook session cookies, read-only. The wrapper loads
+      # these via context.addCookies() to skip the login form
+      # (which would hit Meta's most aggressive bot detection).
+      - ./secrets/facebook.cookies.json:/secrets/facebook.cookies.json:ro
+    stdin_open: true
+    tty:        true
+    restart:    unless-stopped
